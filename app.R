@@ -3,6 +3,7 @@ library(dplyr)
 library(ggplot2)
 library(plotly)
 library(sunburstR)
+library(leaflet)
 load("data/shiny_data.rda")
 
 ui <- dashboardPage(
@@ -10,12 +11,12 @@ ui <- dashboardPage(
   dashboardSidebar(
     sidebarMenu(
     menuItem("Overview", tabName = "overview", icon = icon("dashboard")),
+    menuItem("Geography", tabName = "geography", icon = icon("globe")),
     menuItem("Phone Brand", tabName = "phone", icon = icon("mobile"))
   )
   ),
   dashboardBody(
     tabItems(
-      # First tab content
       tabItem(tabName = "overview",
               fluidRow(
                 column(width = 7,
@@ -29,7 +30,31 @@ ui <- dashboardPage(
               )
       ),
       
-      # Second tab content
+      tabItem(tabName = "geography",
+              column(width = 8,
+                     fluidRow(
+                       box(width = NULL, leafletOutput("leaflet"))
+                       
+                     ),
+                     fluidRow(
+                       box(width = 6, plotOutput("geography_gender", height = 250)),
+                       
+                       box(width = 6, plotOutput("geography_age", height = 250))
+                     )
+                     ),
+              column(width = 3, offset = 1,
+                     box(width = NULL, 
+                         dateInput("date", label = h3("Date input"), 
+                                   value = "2016-05-01", min = "2016-05-01",
+                                   max = "2016-05-08"),
+                         radioButtons("time", label = h3("Part of the day"),
+                                      choices = c("morning", "midday", 
+                                                  "evening", "night"), 
+                                      selected = "morning")
+                     )
+              )
+              ),
+      
       tabItem(tabName = "phone",
               fluidRow(
                 box(width = 12, plotlyOutput("plot3"))
@@ -85,6 +110,16 @@ server <- function(input, output) {
     d 
   })
   
+  getGeographyData <- reactive({
+    d <- events %>%
+      filter(date == input$date, time == input$time,
+             longitude != 0, latitude != 0,
+             longitude > 73.227924, latitude > 18.192231)
+    d
+  })
+  
+  
+  
   output$plot3 <- renderPlotly({
     d <- getPhoneDataBar()
     
@@ -103,6 +138,27 @@ server <- function(input, output) {
   output$sunburst <- renderSunburst({
     d <- getPhoneDataSunburst()
     sunburst(d)
+  })
+  
+  output$leaflet <- renderLeaflet({
+    d <- getGeographyData()
+    leaflet(d) %>% addTiles() %>% addMarkers(
+      clusterOptions = markerClusterOptions()
+    )
+  })
+  
+  geographyGenderAge <- reactive({
+    semi_join(gender_age_train, getGeographyData(), by = "device_id") 
+  })
+  
+  output$geography_gender <- renderPlot({
+    d <- geographyGenderAge()
+    ggplot(d, aes(gender, fill = gender)) + geom_bar()
+  })
+  
+  output$geography_age <- renderPlot({
+    d <- geographyGenderAge()
+    ggplot(d, aes(age)) + geom_histogram()
   })
     
     
