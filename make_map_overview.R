@@ -1,5 +1,5 @@
 library(ggmap)
-myMap <- get_map(maptype = "hybrid", location=c(86.76, 20.43, 129, 43.34))
+myMap <- get_map(maptype = "hybrid", location=c(113.86, 30.70), zoom = 5)
 events <- filter(events, latitude != 0, longitude != 0)
 
 ggmap(myMap, extent = "device") + 
