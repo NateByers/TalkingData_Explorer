@@ -6,6 +6,18 @@ library(sunburstR)
 library(leaflet)
 load("data/prepped_data.rda")
 
+city_names <- paste0("<b><a href='https://en.wikipedia.org/wiki/",
+                    gsub(" ", "_", map_summary$region),
+                    "'>",
+                    map_summary$region,
+                    "</a></b>")
+number_events <- paste0(map_summary$events, " events on") 
+number_devices <- paste0(map_summary$devices, " devices")
+overview_content <- paste(sep = "<br/>", city_names, number_events,
+                          number_devices)
+
+######################################################################3
+
 ui <- dashboardPage(
   dashboardHeader(title = "TalkingData Explorer"),
   dashboardSidebar(
@@ -18,15 +30,15 @@ ui <- dashboardPage(
       tabItem(tabName = "map",
               fluidRow(
                 box(width = 7, 
-                    leafletOutput("map")
+                    leafletOutput("map", height = 550)
                     ),
                 box(width = 4, offset = 1,
-                    dateInput("date", label = h3("Date input"), value = "2014-01-01")
+                    title = "Demographics (in view)",
+                    p("Below are plots of age and gender based on the data for events
+                      that are within the boundary of the map."),
+                    plotOutput("age_histogram", height = 250),
+                    plotOutput("gender_bar", height = 200)
                     )
-              ),
-              fluidRow(
-                plotOutput("age_histogram", height = 250),
-                plotOutput("gender_bar", height = 200)
               )
       )
     )
@@ -39,13 +51,15 @@ server <- function(input, output) {
   
   # Create the map
   output$map <- renderLeaflet({
+    
     leaflet(map_summary) %>%
       addTiles(
         urlTemplate = "//{s}.tiles.mapbox.com/v3/jcheng.map-5ebohr46/{z}/{x}/{y}.png",
         attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
       ) %>%
       setView(lng = 112.80, lat = 31.85, zoom = 4) %>%
-      addCircleMarkers()
+      addCircleMarkers() %>%
+      addPopups(map_summary$longitude, map_summary$latitude, overview_content)
   })
   
   # A reactive expression that returns the set of events that are
@@ -68,6 +82,7 @@ server <- function(input, output) {
       return(NULL)
 
     hist(eventsInBounds()$age,
+         main = "",
          xlab = "Age",
          col = '#00DD00',
          border = 'white')
