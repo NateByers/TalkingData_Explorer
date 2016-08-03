@@ -6,23 +6,16 @@ library(sunburstR)
 library(leaflet)
 load("data/prepped_data.rda")
 
-city_names <- paste0("<b><a href='https://en.wikipedia.org/wiki/",
-                    gsub(" ", "_", map_summary$region),
-                    "'>",
-                    map_summary$region,
-                    "</a></b>")
-number_events <- paste0(map_summary$events, " events on") 
-number_devices <- paste0(map_summary$devices, " devices")
-overview_content <- paste(sep = "<br/>", city_names, number_events,
-                          number_devices)
 
-######################################################################3
+
+###### User Interface #####################################################3
 
 ui <- dashboardPage(
   dashboardHeader(title = "TalkingData Explorer"),
   dashboardSidebar(
     sidebarMenu(
-      menuItem("Map", tabName = "map", icon = icon("globe"))
+      menuItem("Map", tabName = "map", icon = icon("globe")),
+      menuItem("Phone Brand", tabName = "phone", icon = icon("mobile"))
     )
   ),
   dashboardBody(
@@ -41,10 +34,52 @@ ui <- dashboardPage(
                     plotOutput("gender_bar", height = 200)
                     )
               )
+      ),
+      
+      tabItem(tabName = "phone",
+                     fluidRow(
+                       box(width = 6, sunburstOutput("sunburst", height = 300)),
+                       box(plotlyOutput("brands_bar"), width = 6, height =300,
+                           title = "Top 25 brands")
+                     ),
+              fluidRow(
+                
+                box(width = 6, title = "Control Panel",
+                    column(width = 6,
+                           checkboxGroupInput("region", "Select city", 
+                                       choices = c("Beijing", "Chengdu",
+                                                   "Hong Kong", "Shanghai"),
+                                       selected = c("Beijing", "Chengdu",
+                                                    "Hong Kong", "Shanghai"))
+                      
+                    ),
+                    column(width = 6,
+                           checkboxGroupInput("time_of_day", "Time of the day",
+                                              choices = c("morning", "midday", 
+                                                          "evening", "night"),
+                                              selected = c("morning", "midday", 
+                                                           "evening", "night"))
+                           )
+                    ),
+                box(width = 6, title = "Demographics",
+                    column(width = 6,
+                           plotOutput("phone_age_histogram", height  = 200)
+                    ),
+                    column(width = 6,
+                           plotOutput("phone_gender_bar", height = 200)
+                           )
+                           )
+                    
+              )
+                     
+              
       )
     )
   )
 )
+
+
+############ Server Logic ######################################
 
 server <- function(input, output) {
   
@@ -84,7 +119,7 @@ server <- function(input, output) {
 
 
   output$age_histogram <- renderPlot({
-    # If no zipcodes are in view, don't plot
+    
     if (nrow(eventsInBounds()) == 0)
       return(NULL)
 
@@ -105,35 +140,68 @@ server <- function(input, output) {
     barplot(counts, xlab = "Gender", col = 'dodgerblue', border = 'white')
   })
 
+  ##### Phone Brands ###############################################
+  getBrandData <- reactive({
+    d <- full_data %>%
+      filter(region %in% input$region, time %in% input$time_of_day) %>%
+      select(device_id, phone_brand, device_model, gender, age) %>%
+      distinct()
+    
+    d
+  })
   
-  # 
-  # # Show a popup at the given location
-  # showZipcodePopup <- function(zipcode, lat, lng) {
-  #   selectedZip <- allzips[allzips$zipcode == zipcode,]
-  #   content <- as.character(tagList(
-  #     tags$h4("Score:", as.integer(selectedZip$centile)),
-  #     tags$strong(HTML(sprintf("%s, %s %s",
-  #                              selectedZip$city.x, selectedZip$state.x, selectedZip$zipcode
-  #     ))), tags$br(),
-  #     sprintf("Median household income: %s", dollar(selectedZip$income * 1000)), tags$br(),
-  #     sprintf("Percent of adults with BA: %s%%", as.integer(selectedZip$college)), tags$br(),
-  #     sprintf("Adult population: %s", selectedZip$adultpop)
-  #   ))
-  #   leafletProxy("map") %>% addPopups(lng, lat, content, layerId = zipcode)
-  # }
-  # 
-  # # When map is clicked, show a popup with city info
-  # observe({
-  #   leafletProxy("map") %>% clearPopups()
-  #   event <- input$map_shape_click
-  #   if (is.null(event))
-  #     return()
-  #   
-  #   isolate({
-  #     showZipcodePopup(event$id, event$lat, event$lng)
-  #   })
-  # })
-  # 
+  
+  output$brands_bar <- renderPlotly({
+    d <- getBrandData() %>%
+      group_by(phone_brand) %>%
+      summarize(total = n()) %>%
+      arrange(desc(total)) %>%
+      as.data.frame()
+    
+    gg <- ggplot(d[1:25, ], aes(reorder(phone_brand, -total), total,
+                                fill = phone_brand)) + 
+      geom_bar(stat = "identity") + 
+      theme(legend.position = "none", axis.text.x=element_text(angle=90),
+            axis.title.x=element_blank())
+    # Convert the ggplot to a plotly
+    p <- ggplotly(gg)
+    p
+  })
+  
+  getPhoneDataSunburst <- reactive({
+    d <- getBrandData() %>%
+      mutate(brand = gsub(" ", "_", phone_brand),
+             model = gsub(" ", "_", device_model),
+             sunburst = paste(brand, model, "end", sep = "-")) %>%
+      group_by(sunburst) %>%
+      summarize(total = n()) %>%
+      arrange(desc(total)) %>% 
+      select(sunburst, total) %>%
+      rename(V1 = sunburst, V2 = total) %>%
+      as.data.frame()
+    
+    d 
+  })
+  
+  output$sunburst <- renderSunburst({
+    d <- getPhoneDataSunburst()
+    sunburst(d)
+  })
+  
+  output$phone_age_histogram <- renderPlot({
+    
+    hist(getBrandData()$age,
+         main = "",
+         xlab = "Age",
+         col = '#00DD00',
+         border = 'white')
+  })
+  
+  output$phone_gender_bar <- renderPlot({
+    counts <- table(getBrandData()$gender)
+    
+    barplot(counts, xlab = "Gender", col = 'dodgerblue', border = 'white')
+  })
     
 }
 
