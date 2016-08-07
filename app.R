@@ -23,6 +23,12 @@ ui <- dashboardPage(
     tabItems(
       tabItem(tabName = "map",
               fluidRow(
+                box(width = 12,
+                    selectInput("size", "Size of Circle by", 
+                                choices = c("Events", "Devices"))       
+                )
+              ),
+              fluidRow(
                 box(width = 7, 
                     leafletOutput("map", height = 550)
                     )
@@ -84,14 +90,51 @@ server <- function(input, output) {
   # Create the map
   output$map <- renderLeaflet({
     
-    leaflet(map_summary) %>%
+    leaflet() %>%
       addTiles(
         urlTemplate = "//{s}.tiles.mapbox.com/v3/jcheng.map-5ebohr46/{z}/{x}/{y}.png",
         attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
       ) %>%
-      setView(lng = 112.80, lat = 31.85, zoom = 4) %>%
-      addCircleMarkers(radius = map_summary$radius) %>%
-      addPopups(map_summary$longitude, map_summary$latitude, overview_content)
+      setView(lng = 112.80, lat = 31.85, zoom = 3) 
+  })
+  
+  observe({
+    sizeBy <- input$size
+    print(sizeBy)
+    
+    if (sizeBy == "Events") {
+      radius <- map_data$radius_events
+      
+    } else {
+      radius <- map_data$radius_devices
+    }
+    print(max(radius))
+    
+    leafletProxy("map", data = map_data) %>%
+      clearShapes() %>%
+      addCircleMarkers(~longitude, ~latitude, radius=radius, layerId=~cells,
+                       stroke=FALSE, fillOpacity=0.4) 
+  })
+  
+  # Show a popup at the given location
+  showCellPopup <- function(cell, lat, lng) {
+    selected_cell <- map_data[map_data$cells == cell,]
+    content <- paste0(selected_cell$events, " events on<br/>",
+                      selected_cell$devices, " devices")
+    leafletProxy("map") %>% addPopups(lng, lat, content, layerId = cell)
+  }
+  
+  # When map is clicked, show a popup with city info
+  observe({
+    leafletProxy("map") %>% clearPopups()
+    event <- input$map_marker_click
+    print(event)
+    if (is.null(event))
+      return()
+    
+    isolate({
+      showCellPopup(event$id, event$lat, event$lng)
+    })
   })
   
   # A reactive expression that returns the set of events that are
