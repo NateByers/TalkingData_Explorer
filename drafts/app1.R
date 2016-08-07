@@ -24,9 +24,15 @@ ui <- dashboardPage(
     tabItems(
       tabItem(tabName = "map",
               fluidRow(
+                box(width = 12,
+                    selectInput("size", "Size of Circle by", 
+                                choices = c("Events", "Devices"))       
+                )
+              ),
+              fluidRow(
                 box(width = 7, 
                     leafletOutput("map", height = 550)
-                )
+                    )
                 ,
                 box(width = 4, offset = 1,
                     title = "Demographics (in view)",
@@ -39,15 +45,15 @@ ui <- dashboardPage(
               )
       )
       ,
-      
+
       tabItem(tabName = "phone",
+                     fluidRow(
+                       box(width = 6, sunburstOutput("sunburst", height = 325)),
+                       box(plotlyOutput("brands_bar", height =325), width = 6,
+                           title = "Top 25 brands")
+                     ),
               fluidRow(
-                box(width = 6, sunburstOutput("sunburst", height = 325)),
-                box(plotlyOutput("brands_bar", height =325), width = 6,
-                    title = "Top 25 brands")
-              ),
-              fluidRow(
-                
+
                 box(width = 6, title = "Select a city",
                     p("Subset the data by selecting one or more cities."),
                     textOutput("n_phone"),
@@ -57,23 +63,23 @@ ui <- dashboardPage(
                                        selected = c("Beijing", "Chengdu",
                                                     "Hong Kong", "Shanghai"),
                                        inline = TRUE)
-                ),
+                    ),
                 box(width = 6, title = "Demographics",
                     column(width = 6,
                            plotlyOutput("phone_age_histogram", height  = 200)
                     ),
                     column(width = 6,
                            plotlyOutput("phone_gender_bar", height = 200)
-                    )
-                )
-                
+                           )
+                           )
+
               )
-              
-              
+
+
       )
     )
-    )
   )
+)
 
 
 ############ Server Logic ######################################
@@ -85,17 +91,31 @@ server <- function(input, output) {
   # Create the map
   output$map <- renderLeaflet({
     
-    leaflet(map_data) %>%
+    leaflet() %>%
       addTiles(
         urlTemplate = "//{s}.tiles.mapbox.com/v3/jcheng.map-5ebohr46/{z}/{x}/{y}.png",
         attribution = 'Maps by <a href="http://www.mapbox.com/">Mapbox</a>'
       ) %>%
-      setView(lng = 112.80, lat = 31.85, zoom = 4) %>%
-      addCircleMarkers(~longitude, ~latitude, radius=~radius_events, layerId=~cells,
-                       stroke=FALSE, fillOpacity=0.7) 
+      setView(lng = 112.80, lat = 31.85, zoom = 3) 
   })
   
-  
+  observe({
+    sizeBy <- input$size
+    print(sizeBy)
+    
+    if (sizeBy == "Events") {
+      radius <- map_data$radius_events
+      
+    } else {
+      radius <- map_data$radius_devices
+    }
+    print(max(radius))
+    
+    leafletProxy("map", data = map_data) %>%
+      clearShapes() %>%
+      addCircleMarkers(~longitude, ~latitude, radius=radius, layerId=~cells,
+                       stroke=FALSE, fillOpacity=0.4) 
+  })
   
   # Show a popup at the given location
   showCellPopup <- function(cell, lat, lng) {
@@ -125,18 +145,18 @@ server <- function(input, output) {
     bounds <- input$map_bounds
     latRng <- range(bounds$north, bounds$south)
     lngRng <- range(bounds$east, bounds$west)
-    
+
     subset(full_data,
            latitude >= latRng[1] & latitude <= latRng[2] &
              longitude >= lngRng[1] & longitude <= lngRng[2]) %>%
       select(device_id, gender, age) %>%
       distinct()
   })
-  
+
   output$n <- renderText({
     paste("Total number of people:", dim(eventsInBounds())[1])
   })
-  
+
   
   output$age_histogram <- renderPlotly({
     
@@ -148,7 +168,7 @@ server <- function(input, output) {
             marker = list(color = toRGB(hist_color))) %>%
       layout(xaxis = list(title = "Age"))
   })
-  
+
   
   output$gender_bar <- renderPlotly({
     if (nrow(eventsInBounds()) == 0)
@@ -165,29 +185,29 @@ server <- function(input, output) {
       layout(xaxis = list(title = "Gender"))
     p
   })
-  
+
   ##### Phone Brands ###############################################
   getBrandData <- reactive({
     d <- full_data %>%
       filter(region %in% input$region) %>%
       select(device_id, phone_brand, device_model, gender, age) %>%
       distinct()
-    
+
     d
   })
   
   output$n_phone <- renderText({
     paste("Total number of devices:", dim(getBrandData())[1])
   })
-  
-  
+
+
   output$brands_bar <- renderPlotly({
     d <- getBrandData() %>%
       group_by(phone_brand) %>%
       summarize(total = n()) %>%
       arrange(desc(total)) %>%
       as.data.frame()
-    
+
     gg <- ggplot(d[1:25, ], aes(phone_brand, total, fill = phone_brand)) +
       geom_bar(stat = "identity") +
       theme(legend.position = "none", axis.text.x=element_text(angle=90),
@@ -196,7 +216,7 @@ server <- function(input, output) {
     p <- ggplotly(gg)
     p
   })
-  
+
   getPhoneDataSunburst <- reactive({
     d <- getBrandData() %>%
       mutate(brand = gsub(" ", "_", phone_brand),
@@ -208,15 +228,15 @@ server <- function(input, output) {
       select(sunburst, total) %>%
       rename(V1 = sunburst, V2 = total) %>%
       as.data.frame()
-    
+
     d
   })
-  
+
   output$sunburst <- renderSunburst({
     d <- getPhoneDataSunburst()
     sunburst(d)
   })
-  
+
   output$phone_age_histogram <- renderPlotly({
     
     plot_ly(x = getBrandData()$age, autobinx = F, type = "histogram",
@@ -224,9 +244,9 @@ server <- function(input, output) {
             marker = list(color = toRGB(hist_color))) %>%
       layout(xaxis = list(title = "Age"))
   })
-  
+
   output$phone_gender_bar <- renderPlotly({
-    
+  
     counts <- table(getBrandData()$gender)
     
     p <- plot_ly(
@@ -238,7 +258,7 @@ server <- function(input, output) {
       layout(xaxis = list(title = "Gender"))
     p
   })
-  
+
 }
 
 shinyApp(ui, server)

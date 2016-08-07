@@ -28,4 +28,7 @@ map_data <- map_data %>%
   mutate(radius_events = (events/max_events)*15,
          radius_devices = (devices/max_devices)*15)
 
+map_data[map_data$radius_events < 1, "radius_events"] <- 1
+map_data[map_data$radius_devices < 1, "radius_devices"] <- 1
+
 save(map_data, file = "data/map.rda")
